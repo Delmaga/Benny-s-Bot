@@ -21,7 +21,7 @@ def save_config(data):
 def get_guild_config(guild_id: int):
     data = load_config()
     str_id = str(guild_id)
-    if str_id not in   # ✅ CORRIGÉ
+    if str_id not in data:
         data[str_id] = {
             "categories": ["Problème technique", "Commande véhicule", "Renseignement", "Autre"],
             "ping_role": None
@@ -32,7 +32,7 @@ def get_guild_config(guild_id: int):
 def update_guild_config(guild_id: int, key: str, value):
     data = load_config()
     str_id = str(guild_id)
-    if str_id not in   # ✅ CORRIGÉ
+    if str_id not in data:
         data[str_id] = {}
     data[str_id][key] = value
     save_config(data)
