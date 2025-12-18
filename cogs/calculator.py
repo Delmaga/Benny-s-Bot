@@ -27,7 +27,8 @@ class CalcButton(ui.Button):
         else:
             view.expr = self.calc_label if view.expr == "0" else view.expr + self.calc_label
 
-        view.children[0].label = view.expr[-25:]
+        display_btn = view.children[0]
+        display_btn.label = view.expr[-25:] if len(view.expr) <= 25 else "..." + view.expr[-22:]
         await interaction.response.edit_message(view=view)
 
 class CalcView(ui.View):

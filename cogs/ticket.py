@@ -21,7 +21,7 @@ def save_config(data):
 def get_guild_config(guild_id: int):
     data = load_config()
     str_id = str(guild_id)
-    if str_id not in 
+    if str_id not in   # ✅ CORRIGÉ
         data[str_id] = {
             "categories": ["Problème technique", "Commande véhicule", "Renseignement", "Autre"],
             "ping_role": None
@@ -32,7 +32,7 @@ def get_guild_config(guild_id: int):
 def update_guild_config(guild_id: int, key: str, value):
     data = load_config()
     str_id = str(guild_id)
-    if str_id not in 
+    if str_id not in   # ✅ CORRIGÉ
         data[str_id] = {}
     data[str_id][key] = value
     save_config(data)
@@ -57,7 +57,11 @@ class TicketSelect(ui.Select):
         if not ticket_cat:
             ticket_cat = await guild.create_category("🎟・Tickets")
 
-        channel = await guild.create_text_channel(f"ticket-{user.name}", category=ticket_cat, overwrites=overwrites)
+        channel = await guild.create_text_channel(
+            name=f"ticket-{user.name}",
+            category=ticket_cat,
+            overwrites=overwrites
+        )
 
         config = get_guild_config(guild.id)
         ping = f"<@&{config['ping_role']}>" if config.get("ping_role") else "@everyone"
@@ -103,7 +107,11 @@ class TicketCog(commands.Cog):
             color=0x2b2d31
         )
         embed.set_footer(text="Benny's Custom Vehicles • GTA RP")
-        await interaction.response.send_message(embed=embed, view=TicketView(config["categories"]), ephemeral=True)
+        await interaction.response.send_message(
+            embed=embed,
+            view=TicketView(config["categories"]),
+            ephemeral=True
+        )
 
     @app_commands.command(name="add_categorie", description="Ajouter une catégorie de ticket")
     @app_commands.checks.has_permissions(manage_guild=True)

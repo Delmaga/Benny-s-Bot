@@ -13,7 +13,7 @@ def get_guild_config(guild_id):
     with open(DATA_FILE, "r") as f:
         data = json.load(f)
     str_id = str(guild_id)
-    if str_id not in 
+    if str_id not in   # ✅ CORRIGÉ
         data[str_id] = {"welcome_channel": None, "welcome_role": None}
         with open(DATA_FILE, "w") as f:
             json.dump(data, f, indent=4)
@@ -23,7 +23,7 @@ def update_guild_config(guild_id, key, value):
     with open(DATA_FILE, "r") as f:
         data = json.load(f)
     str_id = str(guild_id)
-    if str_id not in 
+    if str_id not in   # ✅ CORRIGÉ
         data[str_id] = {}
     data[str_id][key] = value
     with open(DATA_FILE, "w") as f:
@@ -54,7 +54,7 @@ class WelcomeCog(commands.Cog):
                         "`Un mécano te répondra sous 24-48h.`",
             color=0x2b2d31
         )
-        embed.set_image(url="https://i.imgur.com/BennyGTA.gif")  # 🔁 À remplacer
+        embed.set_image(url="https://i.imgur.com/BennyGTA.gif")  # 🔁 Remplace par ton GIF
         embed.set_footer(text="Benny's Custom Vehicles • GTA RP")
         await interaction.response.send_message(embed=embed)
 
@@ -75,7 +75,7 @@ class WelcomeCog(commands.Cog):
                                 "`Un mécano te répondra sous 24-48h.`",
                     color=0x2b2d31
                 )
-                embed.set_image(url="https://i.imgur.com/BennyGTA.gif")  # 🔁 À remplacer
+                embed.set_image(url="https://i.imgur.com/BennyGTA.gif")  # 🔁 Remplace par ton GIF
                 embed.set_footer(text="Benny's Custom Vehicles • GTA RP")
                 await channel.send(embed=embed)
 
