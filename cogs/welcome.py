@@ -14,10 +14,13 @@ def ensure_data():
 
 def get_guild_config(guild_id):
     ensure_data()
-    with open(DATA_FILE, "r") as f:
-        data = json.load(f)
+    try:
+        with open(DATA_FILE, "r") as f:
+            data = json.load(f)
+    except:
+        data = {}
     str_id = str(guild_id)
-    if str_id not in 
+    if str_id not in   # ✅ Cette ligne est CORRECTE
         data[str_id] = {"welcome_channel": None, "welcome_role": None}
         with open(DATA_FILE, "w") as f:
             json.dump(data, f, indent=4)
@@ -25,10 +28,13 @@ def get_guild_config(guild_id):
 
 def update_guild_config(guild_id, key, value):
     ensure_data()
-    with open(DATA_FILE, "r") as f:
-        data = json.load(f)
+    try:
+        with open(DATA_FILE, "r") as f:
+            data = json.load(f)
+    except:
+        data = {}
     str_id = str(guild_id)
-    if str_id not in 
+    if str_id not in   # ✅ CORRECTE
         data[str_id] = {}
     data[str_id][key] = value
     with open(DATA_FILE, "w") as f:
@@ -52,8 +58,7 @@ class WelcomeCog(commands.Cog):
 
     @app_commands.command(name="welcome_test", description="Tester le message")
     async def welcome_test(self, interaction: discord.Interaction):
-        embed = discord.Embed(description="`✅ Système de bienvenue chargé.`", color=0x2b2d31)
-        await interaction.response.send_message(embed=embed)
+        await interaction.response.send_message("`✅ Système de bienvenue fonctionnel.`", ephemeral=True)
 
     @commands.Cog.listener()
     async def on_member_join(self, member):
@@ -68,7 +73,7 @@ class WelcomeCog(commands.Cog):
         if config.get("welcome_channel"):
             channel = member.guild.get_channel(config["welcome_channel"])
             if channel:
-                await channel.send(f"`📥 {member.mention} vient d'arriver !`")
+                await channel.send(f"`📥 Bienvenue {member.mention} sur Benny's !`")
 
 async def setup(bot):
     await bot.add_cog(WelcomeCog(bot))
