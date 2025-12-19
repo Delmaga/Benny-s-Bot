@@ -1,10 +1,8 @@
-# cogs/welcome.py
 import discord
 from discord import app_commands
 from discord.ext import commands
 import json
 import os
-from utils.image_generator import generate_welcome_image
 
 DATA_FILE = "data/config.json"
 
@@ -54,14 +52,8 @@ class WelcomeCog(commands.Cog):
 
     @app_commands.command(name="welcome_test", description="Tester le message")
     async def welcome_test(self, interaction: discord.Interaction):
-        avatar_url = interaction.user.avatar.url if interaction.user.avatar else interaction.user.default_avatar.url
-        img_buffer = await generate_welcome_image(avatar_url, interaction.user.name)
-        if not img_buffer:
-            await interaction.response.send_message("`❌ Erreur lors de la génération de l'image.`", ephemeral=True)
-            return
-
-        file = discord.File(img_buffer, filename="welcome.png")
-        await interaction.response.send_message(file=file)
+        embed = discord.Embed(description="`✅ Système de bienvenue chargé.`", color=0x2b2d31)
+        await interaction.response.send_message(embed=embed)
 
     @commands.Cog.listener()
     async def on_member_join(self, member):
@@ -69,18 +61,14 @@ class WelcomeCog(commands.Cog):
         if config.get("welcome_role"):
             role = member.guild.get_role(config["welcome_role"])
             if role:
-                await member.add_roles(role)
+                try:
+                    await member.add_roles(role)
+                except:
+                    pass
         if config.get("welcome_channel"):
             channel = member.guild.get_channel(config["welcome_channel"])
             if channel:
-                avatar_url = member.avatar.url if member.avatar else member.default_avatar.url
-                img_buffer = await generate_welcome_image(avatar_url, member.name)
-                if not img_buffer:
-                    await channel.send(f"`❌ Erreur lors de la génération de l'image.`")
-                    return
-
-                file = discord.File(img_buffer, filename="welcome.png")
-                await channel.send(file=file)
+                await channel.send(f"`📥 {member.mention} vient d'arriver !`")
 
 async def setup(bot):
     await bot.add_cog(WelcomeCog(bot))
