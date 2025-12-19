@@ -6,15 +6,15 @@ import io
 import os
 from PIL import Image, ImageDraw, ImageFont, ImageOps
 
-# Chemin du fond personnalisé (1024x500, format JPG)
+# Chemin de ton fond 1080x608 JPG
 BG_PATH = "assets/welcome_bg.jpg"
 
-class WelcomeConfigModal(discord.ui.Modal, title="🛠️ Configurer le salon de bienvenue"):
+class WelcomeConfigModal(discord.ui.Modal, title="🛠️ Salon de bienvenue"):
     def __init__(self, guild_id: str):
         super().__init__()
         self.guild_id = guild_id
         self.channel_input = discord.ui.TextInput(
-            label="ID du salon de bienvenue",
+            label="ID du salon",
             placeholder="Ex: 123456789012345678",
             max_length=30
         )
@@ -23,12 +23,11 @@ class WelcomeConfigModal(discord.ui.Modal, title="🛠️ Configurer le salon de
     async def on_submit(self, interaction: discord.Interaction):
         channel_id = self.channel_input.value.strip()
         if not channel_id.isdigit():
-            await interaction.response.send_message("`❌ L'ID du salon doit être un nombre.`", ephemeral=True)
+            await interaction.response.send_message("`❌ ID invalide.`", ephemeral=False)
             return
-
         channel = interaction.guild.get_channel(int(channel_id))
         if not channel:
-            await interaction.response.send_message("`❌ Salon introuvable. Vérifiez l'ID.`", ephemeral=True)
+            await interaction.response.send_message("`❌ Salon introuvable.`", ephemeral=False)
             return
 
         async with aiosqlite.connect("royal_bot.db") as db:
@@ -39,53 +38,53 @@ class WelcomeConfigModal(discord.ui.Modal, title="🛠️ Configurer le salon de
             """, (self.guild_id, channel_id))
             await db.commit()
 
-        await interaction.response.send_message(f"`✅ Salon de bienvenue défini : {channel.mention}`", ephemeral=True)
+        await interaction.response.send_message(f"`✅ Salon défini : {channel.mention}`", ephemeral=False)
 
 def generate_welcome_image(member_name: str, avatar_bytes: bytes) -> io.BytesIO:
-    """Génère une image de bienvenue avec fond 1024x500 et texte 'NOM. A REJOINT RoyalRP'."""
+    """Génère une image de bienvenue avec fond 1080x608."""
     if not os.path.exists(BG_PATH):
         raise FileNotFoundError("Fichier assets/welcome_bg.jpg manquant")
 
-    # Charger le fond (JPG → RGB)
+    # Charger le fond JPG
     bg = Image.open(BG_PATH).convert("RGB")
 
-    # Charger et transformer l'avatar en cercle
+    # Charger l'avatar
     avatar = Image.open(io.BytesIO(avatar_bytes)).convert("RGBA")
-    avatar = avatar.resize((200, 200), Image.LANCZOS)
+    avatar = avatar.resize((250, 250), Image.LANCZOS)
 
-    mask = Image.new("L", (200, 200), 0)
+    # Masque circulaire
+    mask = Image.new("L", (250, 250), 0)
     draw_mask = ImageDraw.Draw(mask)
-    draw_mask.ellipse((0, 0, 200, 200), fill=255)
+    draw_mask.ellipse((0, 0, 250, 250), fill=255)
     avatar.putalpha(mask)
 
-    # Positionner l'avatar au centre
-    x_avatar = (bg.width - 200) // 2
-    y_avatar = 150
-    bg_with_avatar = bg.convert("RGBA")
-    bg_with_avatar.paste(avatar, (x_avatar, y_avatar), avatar)
+    # Positionner l'avatar au centre (x = (1080-250)/2 = 415)
+    x_avatar = (bg.width - 250) // 2
+    y_avatar = 180  # ajusté pour 1080x608
+    bg_rgba = bg.convert("RGBA")
+    bg_rgba.paste(avatar, (x_avatar, y_avatar), avatar)
 
-    # Ajouter le texte personnalisé — TRÈS GRAND
-    draw = ImageDraw.Draw(bg_with_avatar)
-    text = f"{member_name.upper()}. A REJOINT RoyalRP"
+    # Texte agrandi
+    draw = ImageDraw.Draw(bg_rgba)
+    text = f"{member_name.upper()}. A rejoins le Benny's"
 
     try:
-        font = ImageFont.truetype("assets/arial.ttf", 84)
+        font = ImageFont.truetype("assets/arial.ttf", 90)
     except:
         font = ImageFont.load_default()
 
-    # Centrer le texte
     bbox = draw.textbbox((0, 0), text, font=font)
     text_width = bbox[2] - bbox[0]
     x_text = (bg.width - text_width) // 2
-    y_text = 430
+    y_text = 520  # position basse pour 1080x608
 
     # Contour noir épais + texte or
     draw.text((x_text - 6, y_text - 6), text, fill="black", font=font)
     draw.text((x_text + 6, y_text + 6), text, fill="black", font=font)
     draw.text((x_text, y_text), text, fill="gold", font=font)
 
-    # Finaliser et exporter
-    final_image = bg_with_avatar.convert("RGB")
+    # Convertir en RGB et sauvegarder
+    final_image = bg_rgba.convert("RGB")
     buffer = io.BytesIO()
     final_image.save(buffer, format="PNG")
     buffer.seek(0)
@@ -97,7 +96,6 @@ class WelcomeCog(commands.Cog):
 
     @commands.Cog.listener()
     async def on_member_join(self, member: discord.Member):
-        # Récupérer la config du serveur
         async with aiosqlite.connect("royal_bot.db") as db:
             cursor = await db.execute(
                 "SELECT channel_id, role_id FROM welcome_config WHERE guild_id = ?",
@@ -106,7 +104,7 @@ class WelcomeCog(commands.Cog):
             row = await cursor.fetchone()
 
         if not row or not row[0]:
-            return  # Pas configuré → silence
+            return
 
         channel_id, role_id = row
         channel = member.guild.get_channel(int(channel_id))
@@ -114,21 +112,15 @@ class WelcomeCog(commands.Cog):
             return
 
         try:
-            # Télécharger l'avatar
             avatar_url = member.display_avatar.replace(size=512).url
             async with self.bot.session.get(avatar_url) as resp:
                 avatar_data = await resp.read()
-
-            # Générer et envoyer l'image
             image_buffer = generate_welcome_image(member.name, avatar_data)
             file = discord.File(image_buffer, filename="welcome.png")
             await channel.send(file=file)
-
         except Exception:
-            # En cas d'erreur, message de secours
-            await channel.send(f"`⚙️ Bienvenue {member.mention} sur RoyalRP !`")
+            await channel.send(f"`⚙️ Bienvenue {member.mention} aux Benny's !`")
 
-        # Attribution automatique du rôle
         if role_id:
             role = member.guild.get_role(int(role_id))
             if role and role < member.guild.me.top_role:
@@ -143,7 +135,7 @@ class WelcomeCog(commands.Cog):
         modal = WelcomeConfigModal(str(interaction.guild.id))
         await interaction.response.send_modal(modal)
 
-    @discord.app_commands.command(name="welcome_role", description="Définir le rôle à donner à l’arrivée")
+    @discord.app_commands.command(name="welcome_role", description="Définir le rôle à l’arrivée")
     @discord.app_commands.checks.has_permissions(administrator=True)
     async def welcome_role(self, interaction: discord.Interaction, role: discord.Role):
         async with aiosqlite.connect("royal_bot.db") as db:
@@ -153,9 +145,9 @@ class WelcomeCog(commands.Cog):
                 ON CONFLICT(guild_id) DO UPDATE SET role_id = excluded.role_id
             """, (str(interaction.guild.id), str(role.id)))
             await db.commit()
-        await interaction.response.send_message(f"`✅ Rôle de bienvenue défini : {role.name}`", ephemeral=True)
+        await interaction.response.send_message(f"`✅ Rôle défini : {role.name}`", ephemeral=False)
 
-    @discord.app_commands.command(name="welcome_test", description="Tester le message de bienvenue avec votre avatar")
+    @discord.app_commands.command(name="welcome_test", description="Tester l’image de bienvenue")
     @discord.app_commands.checks.has_permissions(administrator=True)
     async def welcome_test(self, interaction: discord.Interaction):
         async with aiosqlite.connect("royal_bot.db") as db:
@@ -166,12 +158,12 @@ class WelcomeCog(commands.Cog):
             row = await cursor.fetchone()
 
         if not row or not row[0]:
-            await interaction.response.send_message("`❌ Configurez d’abord le salon avec /welcome.`", ephemeral=True)
+            await interaction.response.send_message("`❌ Configurez /welcome d’abord.`", ephemeral=False)
             return
 
         channel = interaction.guild.get_channel(int(row[0]))
         if not channel:
-            await interaction.response.send_message("`❌ Salon de bienvenue introuvable.`", ephemeral=True)
+            await interaction.response.send_message("`❌ Salon introuvable.`", ephemeral=False)
             return
 
         try:
@@ -181,11 +173,10 @@ class WelcomeCog(commands.Cog):
             image_buffer = generate_welcome_image(interaction.user.name, avatar_data)
             file = discord.File(image_buffer, filename="welcome_test.png")
             await channel.send(file=file)
-            await interaction.response.send_message("`✅ Test envoyé avec succès.`", ephemeral=True)
+            await interaction.response.send_message("`✅ Test envoyé.`", ephemeral=False)
         except Exception:
-            await channel.send("`❌ Erreur : impossible de générer l’image de test.`")
-            await interaction.response.send_message("`❌ Échec du test.`", ephemeral=True)
+            await channel.send("`❌ Erreur : image non générée.`")
+            await interaction.response.send_message("`❌ Échec du test.`", ephemeral=False)
 
-# Fonction de chargement du cog
 async def setup(bot):
     await bot.add_cog(WelcomeCog(bot))
