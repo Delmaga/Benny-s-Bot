@@ -4,6 +4,7 @@ from discord import app_commands
 from discord.ext import commands
 import json
 import os
+from utils.image_generator import generate_welcome_image
 
 DATA_FILE = "data/config.json"
 
@@ -18,7 +19,7 @@ def get_guild_config(guild_id):
     with open(DATA_FILE, "r") as f:
         data = json.load(f)
     str_id = str(guild_id)
-    if str_id not in   # ← CORRECT : suivi de "data"
+    if str_id not in 
         data[str_id] = {"welcome_channel": None, "welcome_role": None}
         with open(DATA_FILE, "w") as f:
             json.dump(data, f, indent=4)
@@ -29,7 +30,7 @@ def update_guild_config(guild_id, key, value):
     with open(DATA_FILE, "r") as f:
         data = json.load(f)
     str_id = str(guild_id)
-    if str_id not in   # ← CORRECT
+    if str_id not in 
         data[str_id] = {}
     data[str_id][key] = value
     with open(DATA_FILE, "w") as f:
@@ -53,15 +54,14 @@ class WelcomeCog(commands.Cog):
 
     @app_commands.command(name="welcome_test", description="Tester le message")
     async def welcome_test(self, interaction: discord.Interaction):
-        embed = discord.Embed(
-            title="`Bienvenue sur BENNY'S !`",
-            description=f"`Bienvenue {interaction.user.mention} ! 🛠️`\n"
-                        "`Vérifie les règles et utilise **/ticket** pour toute demande.`",
-            color=0x2b2d31
-        )
-        embed.set_image(url="https://i.imgur.com/6QbX6yA.gif")
-        embed.set_footer(text="Benny's Custom Vehicles • GTA RP")
-        await interaction.response.send_message(embed=embed)
+        avatar_url = interaction.user.avatar.url if interaction.user.avatar else interaction.user.default_avatar.url
+        img_buffer = await generate_welcome_image(avatar_url, interaction.user.name)
+        if not img_buffer:
+            await interaction.response.send_message("`❌ Erreur lors de la génération de l'image.`", ephemeral=True)
+            return
+
+        file = discord.File(img_buffer, filename="welcome.png")
+        await interaction.response.send_message(file=file)
 
     @commands.Cog.listener()
     async def on_member_join(self, member):
@@ -73,15 +73,14 @@ class WelcomeCog(commands.Cog):
         if config.get("welcome_channel"):
             channel = member.guild.get_channel(config["welcome_channel"])
             if channel:
-                embed = discord.Embed(
-                    title="`Bienvenue sur BENNY'S !`",
-                    description=f"`Bienvenue {member.mention} ! 🛠️`\n"
-                                "`Vérifie les règles et utilise **/ticket** pour toute demande.`",
-                    color=0x2b2d31
-                )
-                embed.set_image(url="https://i.imgur.com/6QbX6yA.gif")
-                embed.set_footer(text="Benny's Custom Vehicles • GTA RP")
-                await channel.send(embed=embed)
+                avatar_url = member.avatar.url if member.avatar else member.default_avatar.url
+                img_buffer = await generate_welcome_image(avatar_url, member.name)
+                if not img_buffer:
+                    await channel.send(f"`❌ Erreur lors de la génération de l'image.`")
+                    return
+
+                file = discord.File(img_buffer, filename="welcome.png")
+                await channel.send(file=file)
 
 async def setup(bot):
     await bot.add_cog(WelcomeCog(bot))
