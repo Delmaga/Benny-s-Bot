@@ -1,3 +1,4 @@
+# cogs/welcome.py
 import discord
 from discord import app_commands
 from discord.ext import commands
@@ -6,24 +7,29 @@ import os
 
 DATA_FILE = "data/config.json"
 
-def get_guild_config(guild_id):
+def ensure_data():
     os.makedirs("data", exist_ok=True)
     if not os.path.exists(DATA_FILE):
-        return {}
+        with open(DATA_FILE, "w") as f:
+            json.dump({}, f)
+
+def get_guild_config(guild_id):
+    ensure_data()
     with open(DATA_FILE, "r") as f:
         data = json.load(f)
     str_id = str(guild_id)
-    if str_id not in data:
+    if str_id not in 
         data[str_id] = {"welcome_channel": None, "welcome_role": None}
         with open(DATA_FILE, "w") as f:
             json.dump(data, f, indent=4)
     return data[str_id]
 
 def update_guild_config(guild_id, key, value):
+    ensure_data()
     with open(DATA_FILE, "r") as f:
         data = json.load(f)
     str_id = str(guild_id)
-    if str_id not in data:
+    if str_id not in 
         data[str_id] = {}
     data[str_id][key] = value
     with open(DATA_FILE, "w") as f:
@@ -37,13 +43,13 @@ class WelcomeCog(commands.Cog):
     @app_commands.checks.has_permissions(manage_guild=True)
     async def welcome_channel(self, interaction: discord.Interaction, salon: discord.TextChannel):
         update_guild_config(interaction.guild_id, "welcome_channel", salon.id)
-        await interaction.response.send_message(f"`✅ Salon de bienvenue :` {salon.mention}", ephemeral=True)
+        await interaction.response.send_message(f"`✅ Salon de bienvenue défini :` {salon.mention}", ephemeral=True)
 
-    @app_commands.command(name="welcome_role", description="Définir le rôle d'accueil")
+    @app_commands.command(name="welcome_role", description="Définir le rôle à attribuer à l'arrivée")
     @app_commands.checks.has_permissions(manage_guild=True)
     async def welcome_role(self, interaction: discord.Interaction, role: discord.Role):
         update_guild_config(interaction.guild_id, "welcome_role", role.id)
-        await interaction.response.send_message(f"`✅ Rôle attribué à l'arrivée :` {role.mention}", ephemeral=True)
+        await interaction.response.send_message(f"`✅ Rôle d'accueil défini :` {role.mention}", ephemeral=True)
 
     @app_commands.command(name="welcome_test", description="Tester le message de bienvenue")
     async def welcome_test(self, interaction: discord.Interaction):
@@ -54,17 +60,23 @@ class WelcomeCog(commands.Cog):
                         "`Un mécano te répondra sous 24-48h.`",
             color=0x2b2d31
         )
-        embed.set_image(url="https://i.imgur.com/BennyGTA.gif")
+        # 🔁 Remplace par un GIF réel hébergé (ex: imgur, github raw)
+        embed.set_image(url="https://i.imgur.com/6QbX6yA.gif")  # GIF de test fonctionnel
         embed.set_footer(text="Benny's Custom Vehicles • GTA RP")
-        await interaction.response.send_message(embed=embed)
+        await interaction.response.send_message(embed=embed, ephemeral=False)
 
     @commands.Cog.listener()
-    async def on_member_join(self, member):
+    async def on_member_join(self, member: discord.Member):
         config = get_guild_config(member.guild.id)
+        # Ajout du rôle
         if config.get("welcome_role"):
             role = member.guild.get_role(config["welcome_role"])
             if role:
-                await member.add_roles(role)
+                try:
+                    await member.add_roles(role)
+                except discord.Forbidden:
+                    pass  # Ignore si pas la permission
+        # Envoi dans le salon
         if config.get("welcome_channel"):
             channel = member.guild.get_channel(config["welcome_channel"])
             if channel:
@@ -75,7 +87,7 @@ class WelcomeCog(commands.Cog):
                                 "`Un mécano te répondra sous 24-48h.`",
                     color=0x2b2d31
                 )
-                embed.set_image(url="https://i.imgur.com/BennyGTA.gif")
+                embed.set_image(url="https://i.imgur.com/6QbX6yA.gif")
                 embed.set_footer(text="Benny's Custom Vehicles • GTA RP")
                 await channel.send(embed=embed)
 
