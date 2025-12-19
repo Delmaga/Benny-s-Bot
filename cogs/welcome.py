@@ -1,3 +1,4 @@
+# cogs/welcome.py
 import discord
 from discord import app_commands
 from discord.ext import commands
@@ -17,7 +18,7 @@ def get_guild_config(guild_id):
     with open(DATA_FILE, "r") as f:
         data = json.load(f)
     str_id = str(guild_id)
-    if str_id not in 
+    if str_id not in   # ← CORRECT : suivi de "data"
         data[str_id] = {"welcome_channel": None, "welcome_role": None}
         with open(DATA_FILE, "w") as f:
             json.dump(data, f, indent=4)
@@ -28,7 +29,7 @@ def update_guild_config(guild_id, key, value):
     with open(DATA_FILE, "r") as f:
         data = json.load(f)
     str_id = str(guild_id)
-    if str_id not in 
+    if str_id not in   # ← CORRECT
         data[str_id] = {}
     data[str_id][key] = value
     with open(DATA_FILE, "w") as f:

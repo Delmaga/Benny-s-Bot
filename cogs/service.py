@@ -5,7 +5,7 @@ import json
 import os
 from datetime import datetime
 
-MECANO_ROLE_ID = 123456789012345678  # ← À MODIFIER
+MECANO_ROLE_ID = 1451527034558873620  # ← À MODIFIER
 LOG_FILE = "data/service_log.json"
 
 def ensure_data():
