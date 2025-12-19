@@ -1,71 +1,83 @@
 import discord
-from discord import ui, app_commands
 from discord.ext import commands
+import re
 
-SAY_MESSAGES = {}
-
-class SayModal(ui.Modal, title="`Composer un message`"):
-    content = ui.TextInput(
-        label="Contenu",
-        style=discord.TextStyle.paragraph,
-        placeholder="*italique*, _souligné_, ``code``, @mention, etc.",
-        required=True,
-        max_length=2000
-    )
-
-    def __init__(self, message_id=None, original=""):
-        super().__init__()
-        self.message_id = message_id
-        if original:
-            self.content.default = original
+class SayModal(discord.ui.Modal):
+    def __init__(self, title: str, initial_content: str = ""):
+        super().__init__(title=title)
+        self.message_input = discord.ui.TextInput(
+            label="Message à envoyer",
+            style=discord.TextStyle.paragraph,
+            placeholder="Tapez ici...\nUtilisez **gras**, *italique*, `code`, etc.",
+            default=initial_content,  # ← Le message actuel est pré-rempli
+            required=True,
+            max_length=2000
+        )
+        self.add_item(self.message_input)
 
     async def on_submit(self, interaction: discord.Interaction):
-        if self.message_id:
-            if self.message_id not in SAY_MESSAGES:
-                await interaction.response.send_message("`❌ Message non éditable.`")
-                return
-            channel = interaction.guild.get_channel(SAY_MESSAGES[self.message_id]["channel_id"])
-            if not channel:
-                await interaction.response.send_message("`❌ Salon introuvable.`")
-                return
-            try:
-                msg = await channel.fetch_message(self.message_id)
-                await msg.edit(content=self.content.value)
-                await interaction.response.send_message("`✅ Message mis à jour.`")
-            except:
-                await interaction.response.send_message("`❌ Erreur lors de l'édition.`")
-        else:
-            msg = await interaction.channel.send(self.content.value)
-            SAY_MESSAGES[msg.id] = {"channel_id": interaction.channel.id}
-            await interaction.response.send_message("`✅ Message envoyé.`")
+        # À redéfinir dans les sous-classes si besoin
+        pass
 
-class SayCog(commands.Cog):
+class SaySendModal(SayModal):
+    def __init__(self):
+        super().__init__(title="📢 Envoyer un message")
+
+    async def on_submit(self, interaction: discord.Interaction):
+        await interaction.channel.send(self.message_input.value)
+        await interaction.response.send_message("`✅ Message envoyé.`", ephemeral=True)
+
+class SayEditModal(SayModal):
+    def __init__(self, message_to_edit: discord.Message):
+        self.message_to_edit = message_to_edit
+        super().__init__(
+            title="✏️ Modifier un message",
+            initial_content=message_to_edit.content
+        )
+
+    async def on_submit(self, interaction: discord.Interaction):
+        try:
+            await self.message_to_edit.edit(content=self.message_input.value)
+            await interaction.response.send_message("`✅ Message mis à jour.`", ephemeral=True)
+        except Exception as e:
+            await interaction.response.send_message(f"`❌ Erreur : {e}`", ephemeral=True)
+
+class SayCommands(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
-    @app_commands.command(name="say", description="Envoyer un message stylé")
+    @discord.app_commands.command(name="say", description="Envoyer un message via interface")
+    @discord.app_commands.checks.has_permissions(manage_messages=True)
     async def say(self, interaction: discord.Interaction):
-        await interaction.response.send_modal(SayModal())
+        await interaction.response.send_modal(SaySendModal())
 
-    @app_commands.command(name="editsay", description="Modifier un message /say")
-    async def editsay(self, interaction: discord.Interaction, message_id: str):
-        try:
-            msg_id = int(message_id)
-        except ValueError:
-            await interaction.response.send_message("`❌ ID invalide.`")
+    @discord.app_commands.command(name="sayedit", description="Modifier un message envoyé par /say")
+    @discord.app_commands.checks.has_permissions(manage_messages=True)
+    async def sayedit(self, interaction: discord.Interaction, lien: str):
+        # Extraire l'ID du message
+        match = re.search(r'/(\d+)$', lien)
+        if not match:
+            await interaction.response.send_message("`❌ Lien de message invalide.`", ephemeral=True)
             return
-        if msg_id not in SAY_MESSAGES:
-            await interaction.response.send_message("`❌ Ce message n'est pas éditable.`")
-            return
-        original_content = ""
+
+        message_id = int(match.group(1))
         try:
-            channel = interaction.guild.get_channel(SAY_MESSAGES[msg_id]["channel_id"])
-            if channel:
-                msg = await channel.fetch_message(msg_id)
-                original_content = msg.content
-        except:
-            pass
-        await interaction.response.send_modal(SayModal(message_id=msg_id, original=original_content))
+            message = await interaction.channel.fetch_message(message_id)
+        except discord.NotFound:
+            await interaction.response.send_message("`❌ Message introuvable.`", ephemeral=True)
+            return
+        except discord.Forbidden:
+            await interaction.response.send_message("`❌ Je ne peux pas accéder à ce message.`", ephemeral=True)
+            return
+
+        # Vérifier que le message vient du bot
+        if message.author.id != self.bot.user.id:
+            await interaction.response.send_message("`⚠️ Ce message n’a pas été envoyé par /say.`", ephemeral=True)
+            return
+
+        # Ouvrir la modale avec le contenu existant
+        modal = SayEditModal(message)
+        await interaction.response.send_modal(modal)
 
 async def setup(bot):
-    await bot.add_cog(SayCog(bot))
+    await bot.add_cog(SayCommands(bot))

@@ -1,140 +1,204 @@
+# cogs/ticket.py
 import discord
-from discord import app_commands, ui
 from discord.ext import commands
-import json
-import os
+import aiosqlite
 from datetime import datetime
+import re
 
-DATA_FILE = "data/config.json"
+# ========== BOUTON CLOSE (PERSISTANT) ==========
+class CloseTicketButton(discord.ui.View):
+    def __init__(self):
+        super().__init__(timeout=None)
 
-def ensure_data():
-    os.makedirs("data", exist_ok=True)
-    if not os.path.exists(DATA_FILE):
-        with open(DATA_FILE, "w") as f:
-            json.dump({}, f)
+    @discord.ui.button(
+        label="Close",
+        style=discord.ButtonStyle.red,
+        emoji="🔒",
+        custom_id="close_ticket_button"  # ← OBLIGATOIRE pour persistance
+    )
+    async def close(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if not interaction.user.guild_permissions.manage_channels:
+            await interaction.response.send_message("❌ Vous n'avez pas la permission de fermer ce ticket.", ephemeral=True)
+            return
+        await interaction.channel.delete(reason="Ticket fermé")
 
-def get_guild_config(guild_id):
-    ensure_data()
-    with open(DATA_FILE, "r") as f:
-        data = json.load(f)
-    str_id = str(guild_id)
-    if not str_id in      # ← Méthode alternative : "not in" inversé
-        data[str_id] = {
-            "categories": ["Problème technique", "Commande véhicule", "Renseignement", "Autre"],
-            "ping_role": None
-        }
-        with open(DATA_FILE, "w") as f:
-            json.dump(data, f, indent=4)
-    return data[str_id]
-
-def update_guild_config(guild_id, key, value):
-    ensure_data()
-    with open(DATA_FILE, "r") as f:
-        data = json.load(f)
-    str_id = str(guild_id)
-    if not str_id in      # ← Même ici
-        data[str_id] = {}
-    data[str_id][key] = value
-    with open(DATA_FILE, "w") as f:
-        json.dump(data, f, indent=4)
-
-class TicketView(ui.View):
-    def __init__(self, categories, guild_id):
-        super().__init__(timeout=180)
-        self.guild_id = guild_id
-        self.add_item(TicketSelect(categories))
-
-class TicketSelect(ui.Select):
-    def __init__(self, categories):
-        options = [discord.SelectOption(label=cat, value=cat) for cat in categories]
-        super().__init__(placeholder="Choisissez une catégorie...", options=options)
+# ========== MENU DÉROULANT (NON PERSISTANT) ==========
+class TicketCategorySelect(discord.ui.Select):
+    def __init__(self, categories, guild_id, ping_role_id):
+        options = [
+            discord.SelectOption(label=cat, value=f"{guild_id}|{ping_role_id}|{cat}")
+            for cat in categories
+        ] or [discord.SelectOption(label="Aucune catégorie", value="none")]
+        super().__init__(placeholder="Sélectionnez une catégorie", options=options)
 
     async def callback(self, interaction: discord.Interaction):
-        await interaction.response.defer(ephemeral=True)
-        category = self.values[0]
+        value = self.values[0]
+        if value == "none":
+            await interaction.response.send_message("❌ Aucune catégorie disponible.", ephemeral=False)
+            return
+
+        parts = value.split("|")
+        if len(parts) != 3:
+            await interaction.response.send_message("❌ Erreur interne.", ephemeral=False)
+            return
+
+        guild_id, ping_role_id, category_name = parts
+
         guild = interaction.guild
-        user = interaction.user
+        member = interaction.user
 
-        ticket_cat = discord.utils.get(guild.categories, name="🎟・Tickets")
-        if not ticket_cat:
-            overwrites = {guild.default_role: discord.PermissionOverwrite(read_messages=False)}
-            ticket_cat = await guild.create_category("🎟・Tickets", overwrites=overwrites)
+        # --- Compteur global ---
+        async with aiosqlite.connect("royal_bot.db") as db:
+            cursor = await db.execute(
+                "SELECT ticket_counter FROM ticket_config WHERE guild_id = ?",
+                (guild_id,)
+            )
+            row = await cursor.fetchone()
+            if row:
+                ticket_number = row[0]
+                await db.execute(
+                    "UPDATE ticket_config SET ticket_counter = ? WHERE guild_id = ?",
+                    (ticket_number + 1, guild_id)
+                )
+            else:
+                ticket_number = 1
+                await db.execute(
+                    "INSERT INTO ticket_config (guild_id, ticket_counter) VALUES (?, ?)",
+                    (guild_id, 2)
+                )
+            await db.commit()
 
+        # --- Nom du salon ---
+        safe_cat = re.sub(r'[^\w\s-]', '', category_name).replace(' ', '-').lower()
+        channel_name = f"{safe_cat}-{ticket_number}"
+
+        # --- Permissions ---
         overwrites = {
             guild.default_role: discord.PermissionOverwrite(read_messages=False),
-            user: discord.PermissionOverwrite(read_messages=True, send_messages=True),
+            member: discord.PermissionOverwrite(read_messages=True, send_messages=True),
             guild.me: discord.PermissionOverwrite(read_messages=True, send_messages=True)
         }
-        channel = await guild.create_text_channel(f"ticket-{user.name}", category=ticket_cat, overwrites=overwrites)
 
-        config = get_guild_config(guild.id)
-        ping = f"<@&{config['ping_role']}>" if config.get("ping_role") else "@everyone"
-        now = datetime.now().strftime("%d %b %Y à %Hh%M")
+        channel = await guild.create_text_channel(name=channel_name, overwrites=overwrites)
 
-        embed = discord.Embed(
-            title="`***🎫Ticket - BENNY'S***`",
-            description=(
-                f"{ping}\n\n"
-                "`***------------------------------***`\n\n"
-                f"`***Nom :***` {user.mention}\n"
-                f"`***Catégorie :***` `({category})`\n"
-                f"`***Date :***` `({now})`\n\n"
-                "Veuillez `***Détailler***` votre demande,\n"
-                "Un Mécano vous répondra le plus `***rapidement possible 🔧,***`\n"
-                "Délais possible entre `***24-48H***` 🕥."
-            ),
-            color=0x2b2d31
+        # --- Rôle à ping ---
+        ping_role = None
+        if ping_role_id != "None":
+            ping_role = guild.get_role(int(ping_role_id))
+        ping_mention = ping_role.mention if ping_role else "@here"
+
+        # --- Date en français ---
+        weekdays = ["lundi", "mardi", "mercredi", "jeudi", "vendredi", "samedi", "dimanche"]
+        months = ["", "janvier", "février", "mars", "avril", "mai", "juin",
+                  "juillet", "août", "septembre", "octobre", "novembre", "décembre"]
+        now = datetime.now()
+        date_str = f"{weekdays[now.weekday()]} {now.day} {months[now.month]} à {now.hour}h{now.minute:02d}"
+
+        # --- MESSAGE EN TEXTE BRUT ---
+        content = (
+            f"***Ticket - Royal RP***\n"
+            f"***----------------------------------------***\n"
+            f"{ping_mention}\n"
+            f"***Nom :*** {member.mention}\n"
+            f"***Catégories :*** `{category_name}`\n"
+            f"***Le :*** `{date_str}`\n\n"
+            f"Un Staff vous prendra en charge dans les plus bref délais .\n"
+            f"Veuillez nous ***détailler votre demande***, afin que nous puissions vous répondre le mieux possible 😉.\n"
+            f"🕒 Délais possible entre ***24-48h.***"
         )
-        embed.set_footer(text="Benny's Custom Vehicles • GTA RP")
-        await channel.send(embed=embed)
-        await interaction.followup.send(f"`✅ Ticket créé :` {channel.mention}", ephemeral=True)
 
+        # Ajouter le bouton persistant
+        await channel.send(content=content, view=CloseTicketButton())
+        await interaction.response.send_message(f"✅ Ticket créé : {channel.mention}", ephemeral=False)
+
+class TicketMenuView(discord.ui.View):
+    def __init__(self, categories, guild_id, ping_role_id):
+        super().__init__(timeout=180)  # Non persistant → timeout OK
+        self.add_item(TicketCategorySelect(categories, guild_id, str(ping_role_id) if ping_role_id else "None"))
+
+# ========== COG ==========
 class TicketCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
+        # SEULEMENT le bouton Close est persistant → déjà enregistré dans main.py
 
-    @app_commands.command(name="ticket", description="Ouvrir un ticket Benny's")
-    async def ticket(self, interaction: discord.Interaction):
-        config = get_guild_config(interaction.guild_id)
-        embed = discord.Embed(
-            title="`***🎫Ticket - BENNY'S***`",
-            description=(
-                "Veuillez `***choisir***` la catégorie souhaitée,\n"
-                "Un Mécano vous répondra le plus `***rapidement possible 🔧,***`\n"
-                "Délais possible entre `***24-48H***` 🕥."
-            ),
-            color=0x2b2d31
+    @discord.app_commands.command(name="ticket", description="Créer un menu de ticket dans ce salon")
+    @discord.app_commands.checks.has_permissions(administrator=True)
+    async def ticket_menu(self, interaction: discord.Interaction):
+        async with aiosqlite.connect("royal_bot.db") as db:
+            cursor = await db.execute(
+                "SELECT name FROM ticket_categories WHERE guild_id = ?",
+                (str(interaction.guild.id),)
+            )
+            categories = [row[0] async for row in cursor]
+
+        if not categories:
+            await interaction.response.send_message("❌ Aucune catégorie. Utilisez `/ticket add-categorie <nom>`.", ephemeral=False)
+            return
+
+        async with aiosqlite.connect("royal_bot.db") as db:
+            cursor = await db.execute(
+                "SELECT ping_role_id FROM ticket_config WHERE guild_id = ?",
+                (str(interaction.guild.id),)
+            )
+            row = await cursor.fetchone()
+            ping_role_id = row[0] if row else None
+
+        view = TicketMenuView(categories, str(interaction.guild.id), ping_role_id)
+        content = (
+            f"***Ticket - Royal RP***\n\n"
+            f"🎟️ Sélectionnez la catégorie dont vous avez besoin.\n"
+            f"⚠️ Tout ***troll*** ou ***Irrespect*** sera suivie d'un ban.\n"
+            f"Un Staff vous répondra le plus rapidement possible 😉\n"
+            f"🕒 Délais possible entre ***24-48h***"
         )
-        embed.set_footer(text="Benny's Custom Vehicles • GTA RP")
-        await interaction.response.send_message(embed=embed, view=TicketView(config["categories"], interaction.guild_id), ephemeral=True)
+        await interaction.channel.send(content=content, view=view)
+        await interaction.response.send_message("✅ Menu de ticket créé.", ephemeral=False)
 
-    @app_commands.command(name="add_categorie", description="Ajouter une catégorie")
-    @app_commands.checks.has_permissions(manage_guild=True)
-    async def add_categorie(self, interaction: discord.Interaction, nom: str):
-        config = get_guild_config(interaction.guild_id)
-        if nom in config["categories"]:
-            await interaction.response.send_message("`❌ Catégorie existante.`", ephemeral=True)
-            return
-        config["categories"].append(nom)
-        update_guild_config(interaction.guild_id, "categories", config["categories"])
-        await interaction.response.send_message(f"`✅ Catégorie '{nom}' ajoutée.`", ephemeral=True)
+    @discord.app_commands.command(name="ticket_add_categorie", description="Ajouter une catégorie")
+    @discord.app_commands.checks.has_permissions(administrator=True)
+    async def ticket_add_categorie(self, interaction: discord.Interaction, nom: str):
+        async with aiosqlite.connect("royal_bot.db") as db:
+            await db.execute(
+                "INSERT INTO ticket_categories (guild_id, name) VALUES (?, ?)",
+                (str(interaction.guild.id), nom)
+            )
+            await db.commit()
+        await interaction.response.send_message(f"✅ Catégorie ajoutée : `{nom}`", ephemeral=False)
 
-    @app_commands.command(name="del_categorie", description="Supprimer une catégorie")
-    @app_commands.checks.has_permissions(manage_guild=True)
-    async def del_categorie(self, interaction: discord.Interaction, nom: str):
-        config = get_guild_config(interaction.guild_id)
-        if nom not in config["categories"]:
-            await interaction.response.send_message("`❌ Catégorie introuvable.`", ephemeral=True)
-            return
-        config["categories"].remove(nom)
-        update_guild_config(interaction.guild_id, "categories", config["categories"])
-        await interaction.response.send_message(f"`✅ Catégorie '{nom}' supprimée.`", ephemeral=True)
+    @discord.app_commands.command(name="ticket_del_categorie", description="Supprimer une catégorie")
+    @discord.app_commands.checks.has_permissions(administrator=True)
+    async def ticket_del_categorie(self, interaction: discord.Interaction, nom: str):
+        async with aiosqlite.connect("royal_bot.db") as db:
+            await db.execute(
+                "DELETE FROM ticket_categories WHERE guild_id = ? AND name = ?",
+                (str(interaction.guild.id), nom)
+            )
+            await db.commit()
+        await interaction.response.send_message(f"✅ Catégorie supprimée : `{nom}`", ephemeral=False)
 
-    @app_commands.command(name="ticket_ping", description="Définir le rôle ping")
-    @app_commands.checks.has_permissions(manage_guild=True)
+    @discord.app_commands.command(name="ticket_edit_categorie", description="Renommer une catégorie")
+    @discord.app_commands.checks.has_permissions(administrator=True)
+    async def ticket_edit_categorie(self, interaction: discord.Interaction, ancien: str, nouveau: str):
+        async with aiosqlite.connect("royal_bot.db") as db:
+            await db.execute(
+                "UPDATE ticket_categories SET name = ? WHERE guild_id = ? AND name = ?",
+                (nouveau, str(interaction.guild.id), ancien)
+            )
+            await db.commit()
+        await interaction.response.send_message(f"✅ Catégorie renommée : `{ancien}` → `{nouveau}`", ephemeral=False)
+
+    @discord.app_commands.command(name="ticket_ping", description="Définir le rôle à ping")
+    @discord.app_commands.checks.has_permissions(administrator=True)
     async def ticket_ping(self, interaction: discord.Interaction, role: discord.Role):
-        update_guild_config(interaction.guild_id, "ping_role", role.id)
-        await interaction.response.send_message(f"`✅ Rôle de ping :` {role.mention}", ephemeral=True)
+        async with aiosqlite.connect("royal_bot.db") as db:
+            await db.execute("""
+                INSERT INTO ticket_config (guild_id, ping_role_id)
+                VALUES (?, ?)
+                ON CONFLICT(guild_id) DO UPDATE SET ping_role_id = excluded.ping_role_id
+            """, (str(interaction.guild.id), str(role.id)))
+            await db.commit()
+        await interaction.response.send_message(f"✅ Rôle de ping défini : {role.mention}", ephemeral=False)
 
 async def setup(bot):
     await bot.add_cog(TicketCog(bot))
