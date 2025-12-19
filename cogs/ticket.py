@@ -1,4 +1,3 @@
-# cogs/ticket.py
 import discord
 from discord import app_commands, ui
 from discord.ext import commands
@@ -43,7 +42,6 @@ class TicketView(ui.View):
     def __init__(self, categories, guild_id):
         super().__init__(timeout=180)
         self.guild_id = guild_id
-        self.categories = categories
         self.add_item(TicketSelect(categories))
 
 class TicketSelect(ui.Select):
@@ -52,23 +50,16 @@ class TicketSelect(ui.Select):
         super().__init__(placeholder="Choisissez une catégorie...", options=options)
 
     async def callback(self, interaction: discord.Interaction):
-        # ⚡ Réponse IMMÉDIATE (obligatoire)
         await interaction.response.defer(ephemeral=True)
-
         category = self.values[0]
         guild = interaction.guild
         user = interaction.user
 
-        # Créer la catégorie de tickets si absente
         ticket_cat = discord.utils.get(guild.categories, name="🎟・Tickets")
         if not ticket_cat:
-            overwrites = {
-                guild.default_role: discord.PermissionOverwrite(read_messages=False),
-                guild.me: discord.PermissionOverwrite(read_messages=True)
-            }
+            overwrites = {guild.default_role: discord.PermissionOverwrite(read_messages=False)}
             ticket_cat = await guild.create_category("🎟・Tickets", overwrites=overwrites)
 
-        # Créer le salon
         overwrites = {
             guild.default_role: discord.PermissionOverwrite(read_messages=False),
             user: discord.PermissionOverwrite(read_messages=True, send_messages=True),
@@ -76,7 +67,6 @@ class TicketSelect(ui.Select):
         }
         channel = await guild.create_text_channel(f"ticket-{user.name}", category=ticket_cat, overwrites=overwrites)
 
-        # Charger config
         config = get_guild_config(guild.id)
         ping = f"<@&{config['ping_role']}>" if config.get("ping_role") else "@everyone"
         now = datetime.now().strftime("%d %b %Y à %Hh%M")
@@ -97,15 +87,13 @@ class TicketSelect(ui.Select):
         )
         embed.set_footer(text="Benny's Custom Vehicles • GTA RP")
         await channel.send(embed=embed)
-
-        # ✅ Répondre à l’utilisateur
-        await interaction.followup.send(f"`✅ Votre ticket a été créé :` {channel.mention}", ephemeral=True)
+        await interaction.followup.send(f"`✅ Ticket créé :` {channel.mention}", ephemeral=True)
 
 class TicketCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
-    @app_commands.command(name="ticket", description="Ouvrir un ticket d'assistance")
+    @app_commands.command(name="ticket", description="Ouvrir un ticket Benny's")
     async def ticket(self, interaction: discord.Interaction):
         config = get_guild_config(interaction.guild_id)
         embed = discord.Embed(
@@ -118,24 +106,20 @@ class TicketCog(commands.Cog):
             color=0x2b2d31
         )
         embed.set_footer(text="Benny's Custom Vehicles • GTA RP")
-        await interaction.response.send_message(
-            embed=embed,
-            view=TicketView(config["categories"], interaction.guild_id),
-            ephemeral=True
-        )
+        await interaction.response.send_message(embed=embed, view=TicketView(config["categories"], interaction.guild_id), ephemeral=True)
 
-    @app_commands.command(name="add_categorie")
+    @app_commands.command(name="add_categorie", description="Ajouter une catégorie")
     @app_commands.checks.has_permissions(manage_guild=True)
     async def add_categorie(self, interaction: discord.Interaction, nom: str):
         config = get_guild_config(interaction.guild_id)
         if nom in config["categories"]:
-            await interaction.response.send_message("`❌ Catégorie déjà existante.`", ephemeral=True)
+            await interaction.response.send_message("`❌ Catégorie existante.`", ephemeral=True)
             return
         config["categories"].append(nom)
         update_guild_config(interaction.guild_id, "categories", config["categories"])
         await interaction.response.send_message(f"`✅ Catégorie '{nom}' ajoutée.`", ephemeral=True)
 
-    @app_commands.command(name="del_categorie")
+    @app_commands.command(name="del_categorie", description="Supprimer une catégorie")
     @app_commands.checks.has_permissions(manage_guild=True)
     async def del_categorie(self, interaction: discord.Interaction, nom: str):
         config = get_guild_config(interaction.guild_id)
@@ -146,7 +130,7 @@ class TicketCog(commands.Cog):
         update_guild_config(interaction.guild_id, "categories", config["categories"])
         await interaction.response.send_message(f"`✅ Catégorie '{nom}' supprimée.`", ephemeral=True)
 
-    @app_commands.command(name="ticket_ping")
+    @app_commands.command(name="ticket_ping", description="Définir le rôle ping")
     @app_commands.checks.has_permissions(manage_guild=True)
     async def ticket_ping(self, interaction: discord.Interaction, role: discord.Role):
         update_guild_config(interaction.guild_id, "ping_role", role.id)

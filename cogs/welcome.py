@@ -1,4 +1,3 @@
-# cogs/welcome.py
 import discord
 from discord import app_commands
 from discord.ext import commands
@@ -39,52 +38,44 @@ class WelcomeCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
-    @app_commands.command(name="welcome", description="Définir le salon de bienvenue")
+    @app_commands.command(name="welcome", description="Définir salon de bienvenue")
     @app_commands.checks.has_permissions(manage_guild=True)
     async def welcome_channel(self, interaction: discord.Interaction, salon: discord.TextChannel):
         update_guild_config(interaction.guild_id, "welcome_channel", salon.id)
-        await interaction.response.send_message(f"`✅ Salon de bienvenue défini :` {salon.mention}", ephemeral=True)
+        await interaction.response.send_message(f"`✅ Salon de bienvenue :` {salon.mention}", ephemeral=True)
 
-    @app_commands.command(name="welcome_role", description="Définir le rôle à attribuer à l'arrivée")
+    @app_commands.command(name="welcome_role", description="Définir rôle d'accueil")
     @app_commands.checks.has_permissions(manage_guild=True)
     async def welcome_role(self, interaction: discord.Interaction, role: discord.Role):
         update_guild_config(interaction.guild_id, "welcome_role", role.id)
-        await interaction.response.send_message(f"`✅ Rôle d'accueil défini :` {role.mention}", ephemeral=True)
+        await interaction.response.send_message(f"`✅ Rôle attribué à l'arrivée :` {role.mention}", ephemeral=True)
 
-    @app_commands.command(name="welcome_test", description="Tester le message de bienvenue")
+    @app_commands.command(name="welcome_test", description="Tester le message")
     async def welcome_test(self, interaction: discord.Interaction):
         embed = discord.Embed(
             title="`Bienvenue sur BENNY'S !`",
             description=f"`Bienvenue {interaction.user.mention} ! 🛠️`\n"
-                        "`Vérifie les règles et utilise **/ticket** pour toute demande.`\n"
-                        "`Un mécano te répondra sous 24-48h.`",
+                        "`Vérifie les règles et utilise **/ticket** pour toute demande.`",
             color=0x2b2d31
         )
-        # 🔁 Remplace par un GIF réel hébergé (ex: imgur, github raw)
-        embed.set_image(url="https://i.imgur.com/6QbX6yA.gif")  # GIF de test fonctionnel
+        embed.set_image(url="https://i.imgur.com/6QbX6yA.gif")
         embed.set_footer(text="Benny's Custom Vehicles • GTA RP")
-        await interaction.response.send_message(embed=embed, ephemeral=False)
+        await interaction.response.send_message(embed=embed)
 
     @commands.Cog.listener()
-    async def on_member_join(self, member: discord.Member):
+    async def on_member_join(self, member):
         config = get_guild_config(member.guild.id)
-        # Ajout du rôle
         if config.get("welcome_role"):
             role = member.guild.get_role(config["welcome_role"])
             if role:
-                try:
-                    await member.add_roles(role)
-                except discord.Forbidden:
-                    pass  # Ignore si pas la permission
-        # Envoi dans le salon
+                await member.add_roles(role)
         if config.get("welcome_channel"):
             channel = member.guild.get_channel(config["welcome_channel"])
             if channel:
                 embed = discord.Embed(
                     title="`Bienvenue sur BENNY'S !`",
                     description=f"`Bienvenue {member.mention} ! 🛠️`\n"
-                                "`Vérifie les règles et utilise **/ticket** pour toute demande.`\n"
-                                "`Un mécano te répondra sous 24-48h.`",
+                                "`Vérifie les règles et utilise **/ticket** pour toute demande.`",
                     color=0x2b2d31
                 )
                 embed.set_image(url="https://i.imgur.com/6QbX6yA.gif")
